@@ -1,0 +1,17 @@
+# Large database files (GitHub 100MB limit)
+sp500_data.db
+
+# Python cache & virtual environment
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+
+# OS / Editor generated
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

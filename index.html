@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPY Options Volatility Checker — SVI & SSVI Surface Model</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top Header Navigation -->
+        <header class="app-header">
+            <div class="logo-area">
+                <div class="logo-icon">📈</div>
+                <div>
+                    <h1 class="logo-title">SPY Options Volatility Checker</h1>
+                    <p class="logo-subtitle">SVI/SSVI Implied Volatility Surface & Rich/Cheap Option Signal Engine</p>
+                </div>
+            </div>
+            <div class="header-badges">
+                <span class="badge badge-success" id="db-status-badge">● DB Connected</span>
+                <span class="badge badge-info">Vercel Ready</span>
+            </div>
+        </header>
+
+        <!-- Sidebar / Controls Bar -->
+        <div class="main-layout">
+            <aside class="controls-card">
+                <h2 class="card-title">⚙️ Control Panel</h2>
+                
+                <div class="control-group">
+                    <label for="date-select">Trading Date</label>
+                    <select id="date-select" class="form-select">
+                        <option value="">Loading trading dates...</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="expiry-select">Expiration Date</label>
+                    <select id="expiry-select" class="form-select">
+                        <option value="">Select date first...</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="vol-threshold">Rich/Cheap Threshold (%)</label>
+                    <div class="slider-val-container">
+                        <input type="range" id="vol-threshold" min="0.5" max="5.0" step="0.25" value="1.5" class="form-slider">
+                        <span id="vol-threshold-val" class="slider-val">1.5%</span>
+                    </div>
+                </div>
+
+                <button id="btn-recalculate" class="btn btn-primary">
+                    <span class="btn-text">Recalibrate Models</span>
+                    <span class="btn-spinner hidden"></span>
+                </button>
+            </aside>
+
+            <!-- Main Content Panel -->
+            <main class="content-area">
+                <!-- Top Summary Metrics Row -->
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-label">SPY Spot Price</div>
+                        <div class="metric-value" id="val-spot">--</div>
+                        <div class="metric-sub">Underlying Index</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">30d ATM IV</div>
+                        <div class="metric-value text-indigo" id="val-atm-iv">--</div>
+                        <div class="metric-sub">Implied Volatility</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">21d Realized Vol</div>
+                        <div class="metric-value text-rose" id="val-rv-21d">--</div>
+                        <div class="metric-sub">Historical Volatility</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">52w IV Rank</div>
+                        <div class="metric-value text-teal" id="val-iv-rank">--</div>
+                        <div class="metric-sub">Percentile Range</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Vol Premium (IV - RV)</div>
+                        <div class="metric-value" id="val-vol-prem">--</div>
+                        <div class="metric-sub">Variance Premium</div>
+                    </div>
+                </div>
+
+                <!-- Navigation Tabs -->
+                <div class="tabs-bar">
+                    <button class="tab-btn active" data-tab="tab-svi">🎯 SVI Smile Calibration</button>
+                    <button class="tab-btn" data-tab="tab-ssvi">🌐 SSVI Surface</button>
+                    <button class="tab-btn" data-tab="tab-timeline">📊 Volatility History</button>
+                    <button class="tab-btn" data-tab="tab-signals">📋 Flagged Signals Table</button>
+                </div>
+
+                <!-- Tab 1: SVI Smile -->
+                <section id="tab-svi" class="tab-content active">
+                    <div class="chart-container">
+                        <div id="chart-svi-smile" class="plotly-chart"></div>
+                    </div>
+                    <div class="params-box">
+                        <h3>SVI Model Calibration Parameters</h3>
+                        <div class="params-grid" id="svi-params-grid">
+                            <div class="param-item"><span class="param-k">a (Level):</span> <span class="param-v" id="svi-p-a">--</span></div>
+                            <div class="param-item"><span class="param-k">b (Slope):</span> <span class="param-v" id="svi-p-b">--</span></div>
+                            <div class="param-item"><span class="param-k">ρ (Skew):</span> <span class="param-v" id="svi-p-rho">--</span></div>
+                            <div class="param-item"><span class="param-k">m (Shift):</span> <span class="param-v" id="svi-p-m">--</span></div>
+                            <div class="param-item"><span class="param-k">σ (Smooth):</span> <span class="param-v" id="svi-p-sigma">--</span></div>
+                            <div class="param-item"><span class="param-k">Model RMSE:</span> <span class="param-v highlight-val" id="svi-p-rmse">--</span></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Tab 2: SSVI Surface -->
+                <section id="tab-ssvi" class="tab-content">
+                    <div class="arb-status-bar" id="arb-status-container">
+                        <span id="arb-status-text">Checking surface calendar arbitrage...</span>
+                    </div>
+                    <div class="chart-container">
+                        <div id="chart-ssvi-surface" class="plotly-chart"></div>
+                    </div>
+                </section>
+
+                <!-- Tab 3: Timeline -->
+                <section id="tab-timeline" class="tab-content">
+                    <div class="chart-container">
+                        <div id="chart-timeline" class="plotly-chart"></div>
+                    </div>
+                </section>
+
+                <!-- Tab 4: Signals Table -->
+                <section id="tab-signals" class="tab-content">
+                    <div class="table-controls">
+                        <div class="filter-pills">
+                            <button class="pill-btn active" data-filter="ALL">All Strikes</button>
+                            <button class="pill-btn pill-rich" data-filter="RICH">RICH Only (Overpriced)</button>
+                            <button class="pill-btn pill-cheap" data-filter="CHEAP">CHEAP Only (Underpriced)</button>
+                        </div>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="data-table" id="signals-table">
+                            <thead>
+                                <tr>
+                                    <th>Strike ($)</th>
+                                    <th>Option Type</th>
+                                    <th>Market IV (%)</th>
+                                    <th>SVI Model IV (%)</th>
+                                    <th>Diff (%)</th>
+                                    <th>Bid / Ask ($)</th>
+                                    <th>Volume</th>
+                                    <th>Trading Signal</th>
+                                </tr>
+                            </thead>
+                            <tbody id="signals-tbody">
+                                <tr><td colspan="8" class="text-center">Select date and expiry to load signals...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
