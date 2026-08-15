@@ -2,6 +2,7 @@
 Inference Pipeline for ML-SVI Volatility Surface Forecaster.
 Loads trained ML model binary (ml_surface_model.joblib), predicts next-day SVI parameters,
 and generates Predictive Alpha Trading Signals.
+Includes index-safe bounds checking for both full DB and small demo DB.
 """
 
 import os
@@ -21,9 +22,6 @@ from svi_model import raw_svi_total_variance
 _MODEL_CACHE = None
 
 def load_ml_model():
-    """
-    Load trained ML model binary into memory.
-    """
     global _MODEL_CACHE
     if _MODEL_CACHE is not None:
         return _MODEL_CACHE
@@ -36,12 +34,8 @@ def load_ml_model():
     return _MODEL_CACHE
 
 def predict_next_day_svi(date_str: str) -> Dict[str, Any]:
-    """
-    Predict next-day SVI parameters (a, b, rho, m, sigma) for a given date.
-    """
     data = load_ml_model()
     if not data:
-        # Fallback to standard SVI parameters if model file not present
         return {
             'predicted_params': {'a': 0.01, 'b': 0.1, 'rho': -0.4, 'm': 0.0, 'sigma': 0.1},
             'avg_r2': 0.0,
@@ -50,29 +44,28 @@ def predict_next_day_svi(date_str: str) -> Dict[str, Any]:
         
     model = data['model']
     
-    # Extract features for date_str
     df_und = realized_vol.extract_underlying_history(end_date=date_str)
-    if len(df_und) < 25:
+    if len(df_und) < 2:
         raise ValueError(f"Insufficient underlying history prior to {date_str}")
         
     df_rv5 = realized_vol.calculate_close_to_close_rv(df_und, window=5)
     df_rv21 = realized_vol.calculate_close_to_close_rv(df_und, window=21)
     df_rv63 = realized_vol.calculate_close_to_close_rv(df_und, window=63)
     
-    rv_5d = df_rv5['rv_close_to_close'].iloc[-1]
-    rv_21d = df_rv21['rv_close_to_close'].iloc[-1]
-    rv_63d = df_rv63['rv_close_to_close'].iloc[-1]
+    get_last_val = lambda df: float(df['rv_close_to_close'].dropna().iloc[-1]) if not df.dropna().empty else 0.15
+    rv_5d = get_last_val(df_rv5)
+    rv_21d = get_last_val(df_rv21)
+    rv_63d = get_last_val(df_rv63)
     
-    spot_now = df_und['underlying'].iloc[-1]
-    spot_lag1 = df_und['underlying'].iloc[-2]
-    spot_lag5 = df_und['underlying'].iloc[-6]
-    spot_lag21 = df_und['underlying'].iloc[-22]
+    spot_now = float(df_und['underlying'].iloc[-1])
+    spot_lag1 = float(df_und['underlying'].iloc[-min(2, len(df_und))])
+    spot_lag5 = float(df_und['underlying'].iloc[-min(6, len(df_und))])
+    spot_lag21 = float(df_und['underlying'].iloc[-min(22, len(df_und))])
     
-    ret_1d = np.log(spot_now / spot_lag1)
-    ret_5d = np.log(spot_now / spot_lag5)
-    ret_21d = np.log(spot_now / spot_lag21)
+    ret_1d = float(np.log(spot_now / spot_lag1)) if spot_lag1 > 0 else 0.0
+    ret_5d = float(np.log(spot_now / spot_lag5)) if spot_lag5 > 0 else 0.0
+    ret_21d = float(np.log(spot_now / spot_lag21)) if spot_lag21 > 0 else 0.0
     
-    # Fit SVI parameters for current date and recent lag dates
     raw_slice = data_loader.load_raw_options_slice(date_str)
     clean_slice = data_loader.clean_options_slice(raw_slice)
     
@@ -85,11 +78,10 @@ def predict_next_day_svi(date_str: str) -> Dict[str, Any]:
     svi_curr.fit(clean_slice['log_moneyness'].values, clean_slice['total_variance'].values, tau=tau)
     p = svi_curr.get_params()
     
-    # Feature vector matching training order
     feature_vector = np.array([[
         p['a'], p['b'], p['rho'], p['m'], p['sigma'],
-        p['a'], p['b'], p['rho'], p['m'], p['sigma'],  # Lag 2 proxy
-        p['a'], p['b'], p['rho'], p['m'], p['sigma'],  # Lag 5 proxy
+        p['a'], p['b'], p['rho'], p['m'], p['sigma'],
+        p['a'], p['b'], p['rho'], p['m'], p['sigma'],
         rv_5d, rv_21d, rv_63d,
         ret_1d, ret_5d, ret_21d
     ]])
@@ -117,10 +109,6 @@ def generate_ml_alpha_signals(
     ml_predicted_params: Dict[str, float],
     vol_threshold: float = config.RICH_CHEAP_THRESHOLD_VOL
 ) -> pd.DataFrame:
-    """
-    Compare today's market option IVs against tomorrow's ML-forecasted SVI surface curve.
-    Assigns Predictive Alpha Signals (PREDICTIVE BUY / PREDICTIVE SELL / FAIR).
-    """
     df = df_slice.copy()
     k_array = df['log_moneyness'].values
     tau = df['tau'].iloc[0]

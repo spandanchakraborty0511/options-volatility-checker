@@ -18,11 +18,11 @@ def extract_underlying_history(
 ) -> pd.DataFrame:
     """
     Extract daily underlying SPY closing prices from SQLite database.
-    Uses indexed DTE filter for fast sub-second execution across 18.9M rows.
+    Uses indexed date range filter for fast sub-second execution across both full DB and demo DB.
     """
     conn = data_loader.get_db_connection(db_path)
     
-    query = "SELECT date, underlying FROM sp500_options WHERE option_type = 'C' AND dte BETWEEN 25 AND 35"
+    query = "SELECT date, MAX(underlying) AS underlying FROM sp500_options WHERE 1=1"
     params = []
     
     if start_date and end_date:
@@ -35,7 +35,7 @@ def extract_underlying_history(
         query += " AND date <= ?"
         params = [end_date]
         
-    query += " GROUP BY date ORDER BY date"
+    query += " GROUP BY date ORDER BY date ASC"
     
     df = pd.read_sql_query(query, conn, params=params if params else None)
     conn.close()
