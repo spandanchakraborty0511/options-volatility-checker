@@ -1,5 +1,6 @@
 """
 Integration & Validation Unit Test for ML Surface Forecaster & Predictive Alpha Engine.
+Uses ASCII output formatting for Windows console compatibility.
 """
 
 import sys
@@ -31,7 +32,7 @@ class TestMLSurfaceModel(unittest.TestCase):
         self.assertIn('sigma', p)
         self.assertGreater(p['b'], 0)
         self.assertGreater(p['sigma'], 0)
-        print("✅ ML Next-Day SVI Parameter Prediction Verified:", p)
+        print("[OK] ML Next-Day SVI Parameter Prediction Verified:", p)
 
     def test_02_ml_alpha_signal_generation(self):
         raw_slice = data_loader.load_raw_options_slice(self.test_date, self.test_expiry)
@@ -44,7 +45,7 @@ class TestMLSurfaceModel(unittest.TestCase):
         self.assertIn('ml_forecast_iv', df_flagged.columns)
         self.assertIn('ml_signal', df_flagged.columns)
         signals = df_flagged['ml_signal'].unique()
-        print("✅ ML Alpha Signals Generated:", signals)
+        print("[OK] ML Alpha Signals Generated:", signals)
 
     def test_03_ml_forecast_api_endpoint(self):
         response = self.app.get(f'/api/ml_forecast?date={self.test_date}&expiry={self.test_expiry}')
@@ -55,7 +56,7 @@ class TestMLSurfaceModel(unittest.TestCase):
         self.assertIn('today_iv', data['curves'])
         self.assertIn('pred_iv', data['curves'])
         self.assertIn('market_points', data)
-        print("✅ /api/ml_forecast REST API Endpoint Verified (Status 200 OK)")
+        print("[OK] /api/ml_forecast REST API Endpoint Verified (Status 200 OK)")
 
 if __name__ == '__main__':
     unittest.main()
