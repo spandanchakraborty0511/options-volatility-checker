@@ -19,7 +19,11 @@ import realized_vol
 from svi_model import SVIModel, flag_rich_cheap_strikes
 from ssvi_model import SSVISurface
 import garch_model
-import ml_inference
+
+try:
+    import ml_inference
+except Exception as _e:
+    ml_inference = None
 
 app = Flask(__name__, static_folder="../", static_url_path="")
 
@@ -145,6 +149,9 @@ def get_cached_ssvi(date_str: str):
 
 @functools.lru_cache(maxsize=64)
 def get_cached_ml_forecast(date_str: str, expiry_str: str, vol_thresh: float):
+    if ml_inference is None:
+        return None
+        
     raw_slice = data_loader.load_raw_options_slice(date_str, expiry_str)
     clean_slice = data_loader.clean_options_slice(raw_slice)
     
@@ -154,12 +161,10 @@ def get_cached_ml_forecast(date_str: str, expiry_str: str, vol_thresh: float):
     tau = clean_slice['tau'].iloc[0]
     spot = clean_slice['spot'].iloc[0]
     
-    # Today SVI fit
     svi_today = SVIModel()
     svi_today.fit(clean_slice['log_moneyness'].values, clean_slice['total_variance'].values, tau=tau)
     today_p = svi_today.get_params()
     
-    # ML Prediction
     ml_res = ml_inference.predict_next_day_svi(date_str, expiry_str)
     pred_p = ml_res['predicted_params']
     
