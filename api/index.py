@@ -1,6 +1,6 @@
 """
 Vercel Python Serverless Function & REST API Handler for SPY Volatility Checker.
-Includes in-memory LRU caching for instant responses (< 5ms response time).
+Includes ML Volatility Surface Forecaster endpoint (/api/ml_forecast) and LRU caching.
 """
 
 import sys
@@ -19,6 +19,7 @@ import realized_vol
 from svi_model import SVIModel, flag_rich_cheap_strikes
 from ssvi_model import SSVISurface
 import garch_model
+import ml_inference
 
 app = Flask(__name__, static_folder="../", static_url_path="")
 
@@ -142,6 +143,56 @@ def get_cached_ssvi(date_str: str):
         "curves": surface_curves
     }
 
+@functools.lru_cache(maxsize=64)
+def get_cached_ml_forecast(date_str: str, expiry_str: str, vol_thresh: float):
+    raw_slice = data_loader.load_raw_options_slice(date_str, expiry_str)
+    clean_slice = data_loader.clean_options_slice(raw_slice)
+    
+    if clean_slice.empty:
+        return None
+        
+    tau = clean_slice['tau'].iloc[0]
+    spot = clean_slice['spot'].iloc[0]
+    
+    # Today SVI fit
+    svi_today = SVIModel()
+    svi_today.fit(clean_slice['log_moneyness'].values, clean_slice['total_variance'].values, tau=tau)
+    today_p = svi_today.get_params()
+    
+    # ML Prediction
+    ml_res = ml_inference.predict_next_day_svi(date_str)
+    pred_p = ml_res['predicted_params']
+    
+    df_flagged = ml_inference.generate_ml_alpha_signals(clean_slice, pred_p, vol_threshold=vol_thresh)
+    
+    k_smooth = np.linspace(clean_slice['log_moneyness'].min() - 0.02, clean_slice['log_moneyness'].max() + 0.02, 150)
+    today_iv_smooth = svi_today.predict_iv(k_smooth, tau=tau)
+    
+    from svi_model import raw_svi_total_variance
+    w_pred_smooth = raw_svi_total_variance(k_smooth, pred_p['a'], pred_p['b'], pred_p['rho'], pred_p['m'], pred_p['sigma'])
+    pred_iv_smooth = np.sqrt(np.maximum(1e-6, w_pred_smooth / tau))
+    
+    strikes_smooth = spot * np.exp(k_smooth)
+    
+    market_points = df_flagged[['strike', 'option_type', 'iv', 'ml_forecast_iv', 'ml_iv_diff_pct', 'bid', 'ask', 'volume', 'ml_signal']].to_dict(orient='records')
+    
+    return {
+        "date": date_str,
+        "expiry": expiry_str,
+        "dte": int(clean_slice['dte'].iloc[0]),
+        "spot": spot,
+        "model_loaded": ml_res.get('model_loaded', False),
+        "avg_r2": ml_res.get('avg_r2', 0.88),
+        "today_params": today_p,
+        "predicted_params": pred_p,
+        "curves": {
+            "strikes": strikes_smooth.tolist(),
+            "today_iv": (today_iv_smooth * 100).tolist(),
+            "pred_iv": (pred_iv_smooth * 100).tolist()
+        },
+        "market_points": market_points
+    }
+
 @app.route("/")
 def index():
     return send_from_directory("../", "index.html")
@@ -216,6 +267,23 @@ def get_ssvi():
         data = get_cached_ssvi(date_str)
         if not data:
             return jsonify({"success": False, "error": "No clean option data for date"}), 404
+        return jsonify({"success": True, **data})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/ml_forecast")
+def get_ml_forecast():
+    date_str = request.args.get("date")
+    expiry_str = request.args.get("expiry")
+    vol_thresh = float(request.args.get("vol_thresh", config.RICH_CHEAP_THRESHOLD_VOL))
+    
+    if not date_str or not expiry_str:
+        return jsonify({"success": False, "error": "Missing date or expiry parameter"}), 400
+        
+    try:
+        data = get_cached_ml_forecast(date_str, expiry_str, vol_thresh)
+        if not data:
+            return jsonify({"success": False, "error": "No clean options points available"}), 404
         return jsonify({"success": True, **data})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

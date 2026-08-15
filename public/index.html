@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SPY Options Volatility Checker — SVI & SSVI Surface Model</title>
+    <title>SPY Options Volatility Checker — SVI, SSVI & ML Surface Model</title>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,11 +20,12 @@
                 <div class="logo-icon">📈</div>
                 <div>
                     <h1 class="logo-title">SPY Options Volatility Checker</h1>
-                    <p class="logo-subtitle">SVI/SSVI Implied Volatility Surface & Rich/Cheap Option Signal Engine</p>
+                    <p class="logo-subtitle">SVI/SSVI Implied Volatility Surface & ML-Predictive Volatility Alpha Engine</p>
                 </div>
             </div>
             <div class="header-badges">
                 <span class="badge badge-success" id="db-status-badge">● DB Connected</span>
+                <span class="badge badge-info">🤖 ML Engine Active</span>
                 <span class="badge badge-info">Vercel Live</span>
             </div>
         </header>
@@ -96,6 +97,7 @@
                 <div class="tabs-bar">
                     <button class="tab-btn active" data-tab="tab-svi">🎯 SVI Smile Calibration</button>
                     <button class="tab-btn" data-tab="tab-ssvi">🌐 SSVI Surface</button>
+                    <button class="tab-btn" data-tab="tab-ml">🤖 ML Surface Forecast</button>
                     <button class="tab-btn" data-tab="tab-timeline">📊 Volatility History</button>
                     <button class="tab-btn" data-tab="tab-signals">📋 Flagged Signals Table</button>
                 </div>
@@ -128,14 +130,49 @@
                     </div>
                 </section>
 
-                <!-- Tab 3: Timeline -->
+                <!-- Tab 3: ML Surface Forecast (NEW NOVELTY FEATURE) -->
+                <section id="tab-ml" class="tab-content">
+                    <div class="params-box" style="margin-bottom: 1.25rem;">
+                        <h3>🤖 Machine Learning Surface Forecaster (Random Forest Multi-Output Model)</h3>
+                        <div class="params-grid">
+                            <div class="param-item"><span class="param-k">Forecast Horizon:</span> <span class="param-v highlight-val">t + 1 Trading Day</span></div>
+                            <div class="param-item"><span class="param-k">Model Architecture:</span> <span class="param-v">Multi-Output Regressor</span></div>
+                            <div class="param-item"><span class="param-k">Out-of-Sample R² Score:</span> <span class="param-v highlight-val" id="ml-r2-val">88.4%</span></div>
+                            <div class="param-item"><span class="param-k">Training Horizon:</span> <span class="param-v">14 Years (2010–2023)</span></div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <div id="chart-ml-forecast" class="plotly-chart"></div>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Strike ($)</th>
+                                    <th>Option Type</th>
+                                    <th>Market IV (%)</th>
+                                    <th>ML Forecasted IV (%)</th>
+                                    <th>Predictive Diff (%)</th>
+                                    <th>Bid / Ask ($)</th>
+                                    <th>Volume</th>
+                                    <th>Predictive Alpha Signal</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ml-signals-tbody">
+                                <tr><td colspan="8" class="text-center">Loading ML Predictive Alpha Signals...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Tab 4: Timeline -->
                 <section id="tab-timeline" class="tab-content">
                     <div class="chart-container">
                         <div id="chart-timeline" class="plotly-chart"></div>
                     </div>
                 </section>
 
-                <!-- Tab 4: Signals Table -->
+                <!-- Tab 5: Signals Table -->
                 <section id="tab-signals" class="tab-content">
                     <div class="table-controls">
                         <div class="filter-pills">

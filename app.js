@@ -1,6 +1,6 @@
 /**
  * SPY Options Volatility Checker — Client-Side Logic & Plotly Renderer
- * Progressive Async Loading & Sub-10ms Responsive UI
+ * Includes ML Volatility Surface Forecaster Tab and Progressive Async Loading
  */
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -20,6 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let currentSignalFilter = "ALL";
     let loadedSsviDate = null;
     let loadedTimelineDate = null;
+    let loadedMlDateExpiry = null;
 
     initApp();
 
@@ -38,18 +39,25 @@ document.addEventListener("DOMContentLoaded", () => {
             if (selectedDate) {
                 loadedSsviDate = null;
                 loadedTimelineDate = null;
+                loadedMlDateExpiry = null;
                 await loadExpiriesForDate(selectedDate);
                 await refreshFastPrimaryData();
             }
         });
 
         expirySelect.addEventListener("change", async () => {
+            loadedMlDateExpiry = null;
             await loadSviSmileData();
+            const activeTab = document.querySelector(".tab-btn.active").getAttribute("data-tab");
+            if (activeTab === "tab-ml") {
+                await loadMlForecastData(dateSelect.value, expirySelect.value);
+            }
         });
 
         btnRecalculate.addEventListener("click", async () => {
             loadedSsviDate = null;
             loadedTimelineDate = null;
+            loadedMlDateExpiry = null;
             await refreshFastPrimaryData();
         });
 
@@ -63,9 +71,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 document.getElementById(targetTabId).classList.add("active");
 
                 const selectedDate = dateSelect.value;
+                const selectedExpiry = expirySelect.value;
 
                 if (targetTabId === "tab-ssvi" && loadedSsviDate !== selectedDate) {
                     await loadSsviSurfaceData(selectedDate);
+                }
+
+                if (targetTabId === "tab-ml" && loadedMlDateExpiry !== `${selectedDate}_${selectedExpiry}`) {
+                    await loadMlForecastData(selectedDate, selectedExpiry);
                 }
 
                 if (targetTabId === "tab-timeline" && loadedTimelineDate !== selectedDate) {
@@ -139,6 +152,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const activeTab = document.querySelector(".tab-btn.active").getAttribute("data-tab");
         if (activeTab === "tab-ssvi") {
             loadSsviSurfaceData(selectedDate);
+        } else if (activeTab === "tab-ml") {
+            loadMlForecastData(selectedDate, expirySelect.value);
         } else if (activeTab === "tab-timeline") {
             loadTimelineData(selectedDate);
         }
@@ -305,6 +320,105 @@ document.addEventListener("DOMContentLoaded", () => {
         };
 
         Plotly.newPlot("chart-ssvi-surface", traces, layout, { responsive: true });
+    }
+
+    async function loadMlForecastData(dateStr, expiryStr) {
+        const volThresh = parseFloat(volThresholdInput.value) / 100.0;
+        if (!dateStr || !expiryStr) return;
+
+        try {
+            const res = await fetch(`/api/ml_forecast?date=${dateStr}&expiry=${expiryStr}&vol_thresh=${volThresh}`);
+            const data = await res.json();
+
+            if (data.success) {
+                document.getElementById("ml-r2-val").textContent = `${(data.avg_r2 * 100).toFixed(1)}%`;
+                renderMlForecastChart(data);
+                renderMlSignalsTable(data.market_points);
+                loadedMlDateExpiry = `${dateStr}_${expiryStr}`;
+            }
+        } catch (err) {
+            console.error("Failed to load ML forecast:", err);
+        }
+    }
+
+    function renderMlForecastChart(data) {
+        const spot = data.spot;
+        const curves = data.curves;
+        const points = data.market_points;
+
+        const traceTodaySvi = {
+            x: curves.strikes,
+            y: curves.today_iv,
+            mode: 'lines',
+            name: "Today's Fitted SVI Curve",
+            line: { color: '#6366F1', width: 2.5 }
+        };
+
+        const traceMlPredSvi = {
+            x: curves.strikes,
+            y: curves.pred_iv,
+            mode: 'lines',
+            name: "🤖 Tomorrow's ML-Forecasted SVI Curve (t+1)",
+            line: { color: '#A855F7', width: 3, dash: 'dash' }
+        };
+
+        const traceMarketPoints = {
+            x: points.map(p => p.strike),
+            y: points.map(p => p.iv * 100),
+            mode: 'markers',
+            name: 'Today Market IV',
+            marker: { color: '#3B82F6', size: 7 }
+        };
+
+        const layout = {
+            title: { text: `🤖 ML Volatility Surface Forecast vs Today's Market (${data.date}, Expiry: ${data.expiry})`, font: { color: '#F9FAFB', size: 16 } },
+            paper_bgcolor: '#111827',
+            plot_bgcolor: '#111827',
+            xaxis: { title: 'Strike Price ($)', gridcolor: '#1F2937', color: '#9CA3AF' },
+            yaxis: { title: 'Implied Volatility (%)', gridcolor: '#1F2937', color: '#9CA3AF' },
+            shapes: [{
+                type: 'line',
+                x0: spot, y0: 0, x1: spot, y1: 1,
+                yref: 'paper',
+                line: { color: '#6B7280', width: 1.5, dash: 'dash' }
+            }],
+            legend: { font: { color: '#9CA3AF' } },
+            margin: { t: 50, b: 50, l: 50, r: 30 }
+        };
+
+        Plotly.newPlot("chart-ml-forecast", [traceTodaySvi, traceMlPredSvi, traceMarketPoints], layout, { responsive: true });
+    }
+
+    function renderMlSignalsTable(points) {
+        const tbody = document.getElementById("ml-signals-tbody");
+        tbody.innerHTML = "";
+
+        if (!points || points.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center">No ML predictive signals for selected expiry.</td></tr>`;
+            return;
+        }
+
+        points.forEach(p => {
+            const tr = document.createElement("tr");
+            let sigClass = 'badge-signal-fair';
+            if (p.ml_signal.includes('BUY')) {
+                sigClass = 'badge-signal-cheap';
+            } else if (p.ml_signal.includes('SELL')) {
+                sigClass = 'badge-signal-rich';
+            }
+
+            tr.innerHTML = `
+                <td>$${p.strike.toFixed(2)}</td>
+                <td><span class="badge">${p.option_type === 'C' ? 'CALL' : 'PUT'}</span></td>
+                <td>${(p.iv * 100).toFixed(2)}%</td>
+                <td class="text-indigo">${(p.ml_forecast_iv * 100).toFixed(2)}%</td>
+                <td class="${p.ml_iv_diff_pct >= 0 ? 'text-rose' : 'text-emerald'}">${p.ml_iv_diff_pct >= 0 ? '+' : ''}${p.ml_iv_diff_pct.toFixed(2)}%</td>
+                <td>$${p.bid.toFixed(2)} / $${p.ask.toFixed(2)}</td>
+                <td>${p.volume ? p.volume : 0}</td>
+                <td><span class="${sigClass}">${p.ml_signal}</span></td>
+            `;
+            tbody.appendChild(tr);
+        });
     }
 
     async function loadTimelineData(dateStr) {

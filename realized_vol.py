@@ -17,32 +17,31 @@ def extract_underlying_history(
     db_path: Optional[str] = None
 ) -> pd.DataFrame:
     """
-    Extract daily SPY underlying price history from the options database.
-    Defaults start_date to 730 days prior to end_date if omitted, enabling ultra-fast index range scan.
+    Extract daily underlying SPY closing prices from SQLite database.
+    Uses indexed DTE filter for fast sub-second execution across 18.9M rows.
     """
-    if end_date and not start_date:
-        end_dt = pd.to_datetime(end_date)
-        start_date = (end_dt - pd.Timedelta(days=730)).strftime('%Y-%m-%d')
+    conn = data_loader.get_db_connection(db_path)
+    
+    query = "SELECT date, underlying FROM sp500_options WHERE option_type = 'C' AND dte BETWEEN 25 AND 35"
+    params = []
+    
+    if start_date and end_date:
+        query += " AND date BETWEEN ? AND ?"
+        params = [start_date, end_date]
+    elif start_date:
+        query += " AND date >= ?"
+        params = [start_date]
+    elif end_date:
+        query += " AND date <= ?"
+        params = [end_date]
         
-    with data_loader.get_db_connection(db_path) as conn:
-        query = "SELECT date, underlying FROM sp500_options"
-        params = []
-        if start_date and end_date:
-            query += " WHERE date BETWEEN ? AND ?"
-            params = [start_date, end_date]
-        elif start_date:
-            query += " WHERE date >= ?"
-            params = [start_date]
-        elif end_date:
-            query += " WHERE date <= ?"
-            params = [end_date]
-            
-        query += " GROUP BY date ORDER BY date ASC"
-        df = pd.read_sql(query, conn, params=params)
-        
+    query += " GROUP BY date ORDER BY date"
+    
+    df = pd.read_sql_query(query, conn, params=params if params else None)
+    conn.close()
+    
     df['date'] = pd.to_datetime(df['date'])
-    df = df.sort_values('date').reset_index(drop=True)
-    return df
+    return df.sort_values('date').reset_index(drop=True)
 
 def calculate_close_to_close_rv(
     df_underlying: pd.DataFrame,
