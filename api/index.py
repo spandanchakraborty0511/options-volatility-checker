@@ -160,7 +160,7 @@ def get_cached_ml_forecast(date_str: str, expiry_str: str, vol_thresh: float):
     today_p = svi_today.get_params()
     
     # ML Prediction
-    ml_res = ml_inference.predict_next_day_svi(date_str)
+    ml_res = ml_inference.predict_next_day_svi(date_str, expiry_str)
     pred_p = ml_res['predicted_params']
     
     df_flagged = ml_inference.generate_ml_alpha_signals(clean_slice, pred_p, vol_threshold=vol_thresh)

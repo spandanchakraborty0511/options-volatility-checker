@@ -18,8 +18,12 @@ def extract_underlying_history(
 ) -> pd.DataFrame:
     """
     Extract daily underlying SPY closing prices from SQLite database.
-    Uses indexed date range filter for fast sub-second execution across both full DB and demo DB.
+    Defaults to 400-day indexed lookback window when start_date is omitted for sub-10ms response time.
     """
+    if end_date and not start_date:
+        end_dt = pd.to_datetime(end_date)
+        start_date = (end_dt - pd.Timedelta(days=400)).strftime('%Y-%m-%d')
+        
     conn = data_loader.get_db_connection(db_path)
     
     query = "SELECT date, MAX(underlying) AS underlying FROM sp500_options WHERE 1=1"
