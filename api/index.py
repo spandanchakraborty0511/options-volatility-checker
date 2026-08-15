@@ -39,11 +39,17 @@ def get_cached_timeline(date_str: str):
     start_date = (end_dt - pd.Timedelta(days=400)).strftime('%Y-%m-%d')
     
     df_und = realized_vol.extract_underlying_history(start_date=start_date, end_date=date_str)
-    if len(df_und) < 21:
+    if len(df_und) < 2:
+        df_und = realized_vol.extract_underlying_history(end_date=date_str)
+        
+    if len(df_und) < 2:
         return None
         
     df_rv = realized_vol.calculate_close_to_close_rv(df_und, window=21)
     df_atm = realized_vol.extract_daily_atm_iv(start_date=start_date, end_date=date_str)
+    if len(df_atm) < 2:
+        df_atm = realized_vol.extract_daily_atm_iv(end_date=date_str)
+        
     df_rank = realized_vol.calculate_iv_rank_and_percentile(df_atm, window=252)
     
     df_merged = pd.merge(df_rv, df_rank, on='date', how='inner').sort_values('date')
