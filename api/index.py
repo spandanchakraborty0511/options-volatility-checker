@@ -52,7 +52,7 @@ def get_cached_timeline(date_str: str):
         
     df_rank = realized_vol.calculate_iv_rank_and_percentile(df_atm, window=252)
     
-    df_merged = pd.merge(df_rv, df_rank, on='date', how='inner').sort_values('date')
+    df_merged = pd.merge(df_rv, df_rank, on='date', how='outer').sort_values('date').bfill().ffill().dropna(subset=['date'])
     df_merged['date_str'] = df_merged['date'].dt.strftime('%Y-%m-%d')
     
     dates = df_merged['date_str'].tolist()

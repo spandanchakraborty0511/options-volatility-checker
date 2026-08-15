@@ -73,15 +73,16 @@ def extract_daily_atm_iv(
 ) -> pd.DataFrame:
     """
     Extract daily ATM Implied Volatility (options closest to 30 DTE and moneyness K/S ~ 1.0).
+    Supports 'CE', 'PE', 'C', 'P', 'call', 'put' option_type column values.
     """
     conn = data_loader.get_db_connection(db_path)
     
     query = """
         SELECT date, AVG(iv) AS atm_iv
         FROM sp500_options
-        WHERE option_type = 'C' 
-          AND dte BETWEEN 15 AND 60
-          AND strike BETWEEN (underlying * 0.97) AND (underlying * 1.03)
+        WHERE (option_type = 'CE' OR option_type = 'C' OR option_type = 'call' OR option_type = 'Call')
+          AND dte BETWEEN 10 AND 70
+          AND strike BETWEEN (underlying * 0.92) AND (underlying * 1.08)
           AND iv > 0 AND iv <= 2.0
     """
     params = []
